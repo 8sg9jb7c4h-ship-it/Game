@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VERITY // MEMORY ARCHITECTURE</title>
+    <style>
+        :root {
+            --bg-color: #060810;
+            --panel-bg: rgba(15, 23, 42, 0.65);
+            --border-color: rgba(255, 255, 255, 0.12);
+            --primary-glow: #00f0ff;
+            --accent-glow: #ff0055;
+            --font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            font-family: var(--font-family);
+            color: #ffffff;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* HUD & Overlay */
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 40px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .brand {
+            letter-spacing: 4px;
+            text-transform: uppercase;
+        }
+
+        .brand h1 {
+            font-size: 28px;
+            font-weight: 900;
+            background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 30px rgba(165, 180, 252, 0.3);
+        }
+
+        .brand p {
+            font-size: 11px;
+            color: #64748b;
+            letter-spacing: 2px;
+            margin-top: 4px;
+        }
+
+        .stats-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            padding: 16px 28px;
+            border-radius: 12px;
+            display: flex;
+            gap: 32px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+        }
+
+        .stat-box {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+
+        .stat-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #94a3b8;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            font-mono: monospace;
+            color: #fff;
+        }
+
+        .center-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            pointer-events: auto;
+        }
+
+        .status-text {
+            font-size: 14px;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--primary-glow);
+            margin-bottom: 12px;
+            height: 20px;
+            text-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        .btn-action {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fff;
+            padding: 16px 48px;
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            backdrop-filter: blur(8px);
+            outline: none;
+        }
+
+        .btn-action:hover {
+            background: rgba(255, 255, 255, 0.95);
+            color: #000;
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .btn-action:active {
+            transform: translateY(1px);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Scanline Overlay Effect */
+        .scanlines {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 3;
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.25) 50%
+            ), linear-gradient(
+                90deg,
+                rgba(255, 0, 0, 0.03),
+                rgba(0, 255, 0, 0.01),
+                rgba(0, 0, 255, 0.03)
+            );
+            background-size: 100% 3px, 6px 100%;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="scanlines"></div>
+    
+    <div id="canvas-container">
+        <canvas id="stage"></canvas>
+    </div>
+
+    <div class="ui-layer">
+        <header>
+            <div class="brand">
+                <h1>VERITY</h1>
+                <p>PROTOCOL // INFINITE MEMORY ENGINE</p>
+            </div>
+            <div class="stats-panel">
+                <div class="stat-box">
+                    <span class="stat-label">Sequence</span>
+                    <span class="stat-value" id="score-val">00</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label">Record</span>
+                    <span class="stat-value" id="high-val">00</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="center-message" id="menu-overlay">
+            <div class="status-text" id="status-label">SYSTEM READY</div>
+            <button class="btn-action" id="start-btn">INITIALIZE</button>
+        </div>
+    </div>
+
+    <script>
+        // --- AUDIO ENGINE (Web Audio API Synthesizer) ---
+        class AudioEngine {
+            constructor() {
+                this.ctx = null;
+                this.frequencies = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99]; // C4, E4, G4, C5, E5, G5
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+
+            playNode(index, duration = 0.4) {
+                if (!this.ctx) return;
+                
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                const freq = this.frequencies[index % this.frequencies.length];
+
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+
+                // Add subtle detune synth layer for richness
+                const osc2 = this.ctx.createOscillator();
+                osc2.type = 'triangle';
+                osc2.frequency.setValueAtTime(freq * 1.005, this.ctx.currentTime);
+
+                gain.gain.setValueAtTime(0.01, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.3, this.ctx.currentTime + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+
+                osc.connect(gain);
+                osc2.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start();
+                osc2.start();
+                osc.stop(this.ctx.currentTime + duration);
+                osc2.stop(this.ctx.currentTime + duration);
+            }
+
+            playFail() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(110, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.6);
+
+                gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.6);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.6);
+            }
+        }
+
+        // --- GRAPHICS & GAME LOGIC ---
+        const canvas = document.getElementById('stage');
+        const ctx = canvas.getContext('2d');
+        const audio = new AudioEngine();
+
+        // Node Visual Configurations
+        const NODE_COLORS = [
+            { r: 0, g: 240, b: 255 },  // Cyan
+            { r: 255, g: 0, b: 85 },   // Red/Pink
+            { r: 255, g: 200, b: 0 },  // Gold
+            { r: 0, g: 255, b: 136 },  // Emerald
+            { r: 170, g: 0, b: 255 },  // Purple
+            { r: 255, g: 102, b: 0 }   // Orange
+        ];
+
+        let width, height, dpr;
+        let nodes = [];
+        let sequence = [];
+        let playerStep = 0;
+        let score = 0;
+        let highScore = localStorage.getItem('verity_high') || 0;
+        let gameState = 'IDLE'; // IDLE, REPLAY, PLAYER_INPUT, GAMEOVER
+        let cameraShake = 0;
+
+        document.getElementById('high-val').innerText = String(highScore).padStart(2, '0');
+
+        function resize() {
+            dpr = window.devicePixelRatio || 1;
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            ctx.scale(dpr, dpr);
+            initNodePositions();
+        }
+
+        class Node {
+            constructor(id, x, y, radius, color) {
+                this.id = id;
+                this.x = x;
+                this.y = y;
+                this.baseRadius = radius;
+                this.radius = radius;
+                this.color = color;
+                this.intensity = 0; // 0 to 1 for glow animation
+                this.targetScale = 1;
+                this.currentScale = 1;
+            }
+
+            draw() {
+                const glow = this.intensity;
+                const r = this.radius * this.currentScale;
+
+                // Base Outer Ring
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(${this.color.r}, ${this.color.g}, ${this.color.b}, ${0.2 + glow * 0.8})`;
+                ctx.lineWidth = 2 + glow * 4;
+                ctx.stroke();
+
+                // Core Fill
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, r * 0.85, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(${this.color.r}, ${this.color.g}, ${this.color.b}, ${0.05 + glow * 0.6})`;
+                ctx.fill();
+
+                // Glow Bloom Effect
+                if (glow > 0.01) {
+                    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r * 2);
+                    grad.addColorStop(0, `rgba(${this.color.r}, ${this.color.g}, ${this.color.b}, ${glow * 0.5})`);
+                    grad.addColorStop(1, `rgba(${this.color.r}, ${this.color.g}, ${this.color.b}, 0)`);
+                    
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, r * 2, 0, Math.PI * 2);
+                    ctx.fillStyle = grad;
+                    ctx.fill();
+                }
+            }
+
+            update() {
+                // Smooth animations decay
+                this.intensity += (0 - this.intensity) * 0.1;
+                this.currentScale += (this.targetScale - this.currentScale) * 0.15;
+            }
+
+            activate() {
+                this.intensity = 1.0;
+                this.currentScale = 1.15;
+                this.targetScale = 1.0;
+                audio.playNode(this.id);
+            }
+
+            isInside(px, py) {
+                const dx = px - this.x;
+                const dy = py - this.y;
+                return (dx * dx + dy * dy) <= (this.radius * this.radius);
+            }
+        }
+
+        function initNodePositions() {
+            nodes = [];
+            const count = 6;
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const ringRadius = Math.min(width, height) * 0.28;
+            const nodeRadius = Math.min(width, height) * 0.055;
+
+            for (let i = 0; i < count; i++) {
+                const angle = (i / count) * Math.PI * 2 - Math.PI / 2;
+                const x = centerX + Math.cos(angle) * ringRadius;
+                const y = centerY + Math.sin(angle) * ringRadius;
+                nodes.push(new Node(i, x, y, nodeRadius, NODE_COLORS[i]));
+            }
+        }
+
+        // --- GAME FLOW LOGIC ---
+        function startGame() {
+            audio.init();
+            score = 0;
+            sequence = [];
+            document.getElementById('score-val').innerText = '00';
+            document.getElementById('menu-overlay').classList.add('hidden');
+            nextRound();
+        }
+
+        function nextRound() {
+            gameState = 'REPLAY';
+            playerStep = 0;
+            updateStatus('OBSERVE SEQUENCE');
+            sequence.push(Math.floor(Math.random() * nodes.length));
+            
+            // Play back sequence
+            let i = 0;
+            const interval = setInterval(() => {
+                if (i < sequence.length) {
+                    nodes[sequence[i]].activate();
+                    i++;
+                } else {
+                    clearInterval(interval);
+                    gameState = 'PLAYER_INPUT';
+                    updateStatus('REPEAT SEQUENCE');
+                }
+            }, Math.max(250, 600 - sequence.length * 15)); // Sequence speeds up infinitely
+        }
+
+        function handleNodeClick(index) {
+            if (gameState !== 'PLAYER_INPUT') return;
+
+            nodes[index].activate();
+
+            if (index === sequence[playerStep]) {
+                playerStep++;
+                if (playerStep >= sequence.length) {
+                    score++;
+                    document.getElementById('score-val').innerText = String(score).padStart(2, '0');
+                    if (score > highScore) {
+                        highScore = score;
+                        localStorage.setItem('verity_high', highScore);
+                        document.getElementById('high-val').innerText = String(highScore).padStart(2, '0');
+                    }
+                    gameState = 'REPLAY';
+                    setTimeout(nextRound, 800);
+                }
+            } else {
+                // Fail Sequence
+                cameraShake = 20;
+                audio.playFail();
+                gameState = 'GAMEOVER';
+                updateStatus('SEQUENCE BREACH');
+                
+                setTimeout(() => {
+                    document.getElementById('menu-overlay').classList.remove('hidden');
+                    document.getElementById('status-label').innerText = 'SYSTEM OVERRIDE - FAILED';
+                    document.getElementById('start-btn').innerText = 'REBOOT SYSTEM';
+                }, 1000);
+            }
+        }
+
+        function updateStatus(text) {
+            document.getElementById('status-label').innerText = text;
+        }
+
+        // --- RENDER LOOP ---
+        function render() {
+            ctx.clearRect(0, 0, width, height);
+
+            ctx.save();
+            // Screen Shake Effect
+            if (cameraShake > 0) {
+                const rx = (Math.random() - 0.5) * cameraShake;
+                const ry = (Math.random() - 0.5) * cameraShake;
+                ctx.translate(rx, ry);
+                cameraShake *= 0.9;
+                if (cameraShake < 0.1) cameraShake = 0;
+            }
+
+            // Draw connecting central geometry
+            const cx = width / 2;
+            const cy = height / 2;
+            ctx.beginPath();
+            ctx.arc(cx, cy, Math.min(width, height) * 0.28, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Update & Render Nodes
+            nodes.forEach(node => {
+                node.update();
+                node.draw();
+            });
+
+            ctx.restore();
+            requestAnimationFrame(render);
+        }
+
+        // --- EVENT LISTENERS ---
+        window.addEventListener('resize', resize);
+        
+        window.addEventListener('pointerdown', (e) => {
+            if (gameState !== 'PLAYER_INPUT') return;
+            const rect = canvas.getBoundingClientRect();
+            const px = e.clientX - rect.left;
+            const py = e.clientY - rect.top;
+
+            nodes.forEach(node => {
+                if (node.isInside(px, py)) {
+                    handleNodeClick(node.id);
+                }
+            });
+        });
+
+        document.getElementById('start-btn').addEventListener('click', startGame);
+
+        // Initialization
+        resize();
+        render();
+    </script>
+</body>
+</html>
